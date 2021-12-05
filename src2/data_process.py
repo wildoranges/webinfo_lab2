@@ -15,6 +15,7 @@ def get_word_vec(entity_text_path="../dataset/entity_with_text.txt", relation_te
               
     sentences = word2vec.LineSentence(output_text_path)
     model = word2vec.Word2Vec(sentences, hs=1, min_count=1, window=3, vector_size=vector_size)
+    model.save("../output/test")
     return model
 
 def get_h_r_vec(model:word2vec.Word2Vec, entity_text_path="../dataset/entity_with_text.txt", 

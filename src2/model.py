@@ -5,8 +5,9 @@ import torch.nn.functional as F
 
 from torch.utils.data import Dataset, DataLoader
 from data_process import get_word_vec, get_h_r_vec, load_and_process_data
+from gensim.models import word2vec
 
-device = torch.device('cuda:7' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class TripletDataset(Dataset):
     
@@ -26,12 +27,12 @@ class Word2Vec(nn.Module):
         super(Word2Vec, self).__init__()
         self.vector_size = vector_size
         self.model = nn.Sequential(
-            nn.Linear(vector_size, vector_size),
+            nn.Linear(2*vector_size, vector_size),
             nn.ReLU()
         )
     
     def forward(self, vec_h, vec_r):
-        input_vec = vec_h + vec_r
+        input_vec = torch.hstack((vec_h, vec_r))
         return self.model(input_vec)
 
 def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
@@ -59,11 +60,22 @@ def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
 
 
 if __name__ == '__main__':
-    train_feature, train_label, test_feature, test_label = \
-        load_and_process_data('../dataset/train.txt',\
-             '../dataset/dev.txt')
-    word2vec_model = get_word_vec()
+    word2vec_model = word2vec.Word2Vec.load("../output/test")
     e_dict, r_dict = get_h_r_vec(word2vec_model)
+    
+    # ft = open('../dataset/train.txt', 'r')
+    # fw = open('../dataset/train_process.txt', 'w+')
+    # for line in ft.readlines():
+    #     h, r, t = line.strip().split('\t')
+    #     if (h not in e_dict.keys()) or (r not in r_dict.keys()) or (t not in e_dict.keys()):
+    #         continue
+    #     fw.write(line)
+    # ft.close()
+    # fw.close()
+    
+    train_feature, train_label, test_feature, test_label = \
+        load_and_process_data('../dataset/train_process.txt',\
+             '../dataset/dev.txt')
 
     train_Dataset = TripletDataset(train_feature, train_label)
     test_Dataset = TripletDataset(test_feature, test_label)
@@ -72,5 +84,6 @@ if __name__ == '__main__':
 
     model = Word2Vec(vector_size=100).to(device)
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    optimizer2 = torch.optim.SGD(model.parameters(), lr=0.001)
+    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer2, n_epochs=100, criterion=criterion)
