@@ -1,6 +1,5 @@
 from gensim.models import word2vec
 import numpy as np
-import torch.nn as nn
 
 
 def get_word_vec(entity_text_path="../dataset/entity_with_text.txt", relation_text_path="../dataset/relation_with_text.txt",
@@ -30,7 +29,7 @@ def get_h_r_vec(model:word2vec.Word2Vec, entity_text_path="../dataset/entity_wit
             vec = 0
             for word in text:
                 vec += model.wv[word]
-            vev = vec / np.linalg.norm(vec)
+            vec = vec / np.linalg.norm(vec)
             h[key] = vec
             
     with open(relation_text_path, "r")  as f:
@@ -41,9 +40,24 @@ def get_h_r_vec(model:word2vec.Word2Vec, entity_text_path="../dataset/entity_wit
             vec = 0
             for word in text:
                 vec += model.wv[word]
-            vev = vec / np.linalg.norm(vec)
+            vec = vec / np.linalg.norm(vec)
             r[key] = vec
             
     return h, r
     
-    
+def load_and_process_data(train_filename='../dataset/train.txt', test_filename='../dataset/test.txt'):
+
+    train_xy = np.loadtxt(train_filename, dtype=str)
+    train_feature = train_xy[:, 0:-1]
+    train_label = train_xy[:, [-1]]
+
+    test_xy = np.loadtxt(test_filename, dtype=str)
+    test_feature = test_xy[:, 0:-1]
+    test_label = test_xy[:, [-1]]
+
+    print("train_feature's shape:"+str(train_feature.shape))
+    print("test_feature's shape:"+str(test_feature.shape))
+    print('train_label\'s shape:{}'.format(train_label.shape))
+    print("test_label's shape:{}".format(test_label.shape))
+
+    return train_feature,train_label,test_feature,test_label 
