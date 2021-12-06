@@ -8,7 +8,6 @@ from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader, dataset
 from data_process import get_word_vec, get_h_r_vec, load_and_process_data, remove_no_description_token
 from gensim.models import word2vec
-import matplotlib.pyplot as plt
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -54,14 +53,14 @@ def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
             
             loss.backward()
             optimizer.step()
-            if i % 100 == 0:
+            if i % 1000 == 0:
                 print('Train Epoch: {}/{} [{}/{}]\tLoss: {:.6f}'.format(
                     epoch, n_epochs, i * len(h), len(train_dataloader.dataset), loss.item()))
 
-    torch.save(model, "../output/Model.pkl")
+    torch.save(model, "../output/model.pkl")
 
 def test(test_dataloader, device, criterion):
-    model = torch.load("../output/Model.pkl")
+    model = torch.load("../output/model.pkl")
     model.eval()
     total_loss = 0
 
@@ -86,7 +85,7 @@ def process_test(test_data_path:str):
     f.close()
     return test_data
     
-def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/result.txt", model_path="../output/Model.pkl"):
+def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/result.txt", model_path="../output/model.pkl"):
     f = open(output_path, "w+")
     model = torch.load(model_path)
     model.eval()
@@ -129,11 +128,15 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
 
 if __name__ == '__main__':
     #word2vec_model = get_word_vec()
-    word2vec_model = word2vec.Word2Vec.load("../output/test")
+    word2vec_model = word2vec.Word2Vec.load("../output/word2vec.model")
     e_dict, r_dict = get_h_r_vec(word2vec_model)
 
+    # ignore entities and relations without description in train set
+    # remove_no_description_token(e_dict, r_dict, '../dataset/train.txt', '../dataset/train_process.txt')
+
     # ignore entities and relations without description in test set
-    remove_no_description_token(e_dict, r_dict, '../dataset/dev.txt', '../dataset/dev_process.txt')
+    # remove_no_description_token(e_dict, r_dict, '../dataset/dev.txt', '../dataset/dev_process.txt')
+
     
     train_feature, train_label, test_feature, test_label = \
         load_and_process_data('../dataset/train_process.txt',\
@@ -148,7 +151,7 @@ if __name__ == '__main__':
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
-    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
+    #train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=10, criterion=criterion)
     test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
     test_data = process_test("../dataset/test.txt")
     predict(e_dict, r_dict, test_data)
