@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import random
+from torch.nn.modules.activation import Tanh
 from tqdm import tqdm
 
 from torch.utils.data import Dataset, DataLoader, dataset
@@ -25,17 +26,22 @@ class TripletDataset(Dataset):
 
 class Word2Vec(nn.Module):
 
-    def __init__(self, vector_size):
+    def __init__(self, vector_size, norm=False):
         super(Word2Vec, self).__init__()
         self.vector_size = vector_size
         self.model = nn.Sequential(
             nn.Linear(2*vector_size, vector_size),
             nn.Tanh()
         )
+        self.norm = norm
     
     def forward(self, vec_h, vec_r):
         input_vec = torch.hstack((vec_h, vec_r))
-        return F.normalize(self.model(input_vec))
+        if self.norm:
+            return F.normalize(self.model(input_vec))
+        else:
+            return self.model(input_vec)
+        #return F.normalize(self.model(input_vec))
 
 def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
     model.train()
@@ -123,6 +129,30 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
             f.write(line+"\n")
             
     f.close()
+    
+    
+def get_predict_accuracy(predict_path:str, target_path:str):
+    fp = open(predict_path, "r")
+    fd = open(target_path, "r")
+    fp_lines = fp.readlines()
+    fd_lines = fd.readlines()
+    total = len(fd_lines)
+    if len(fp_lines) != total:
+        print("lines not match")
+        exit(1)
+        
+    acc = 0
+    for i in range(total):
+        fd_line = fd_lines[i]
+        fp_line = fp_lines[i]
+        target = fd_line.strip().split('\t')[-1]
+        predict_res = fp_line.strip().split('\t')
+        if target in predict_res:
+            acc += 1
+            
+    accuracy = acc / total
+    print("accuracy : {}".format(accuracy))
+    return accuracy
             
         
 
@@ -153,5 +183,6 @@ if __name__ == '__main__':
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
     #train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=10, criterion=criterion)
     test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
-    test_data = process_test("../dataset/test.txt")
-    predict(e_dict, r_dict, test_data)
+    test_data = process_test("../dataset/dev.txt")
+    predict(e_dict, r_dict, test_data, output_path="../output/dev_result.txt")
+    get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")

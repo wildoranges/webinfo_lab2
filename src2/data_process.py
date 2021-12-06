@@ -14,12 +14,12 @@ def get_word_vec(entity_text_path="../dataset/entity_with_text.txt", relation_te
             fw.write("\n")
               
     sentences = word2vec.LineSentence(output_text_path)
-    model = word2vec.Word2Vec(sentences, hs=1, min_count=1, window=3, vector_size=vector_size)
+    model = word2vec.Word2Vec(sentences, min_count=1, window=10, vector_size=vector_size)
     model.save("../output/word2vec.model")
     return model
 
 def get_h_r_vec(model:word2vec.Word2Vec, entity_text_path="../dataset/entity_with_text.txt", 
-                relation_text_path="../dataset/relation_with_text.txt"):
+                relation_text_path="../dataset/relation_with_text.txt", norm=False):
     h = {}
     r = {}
     with open(entity_text_path, "r")  as f:
@@ -30,7 +30,8 @@ def get_h_r_vec(model:word2vec.Word2Vec, entity_text_path="../dataset/entity_wit
             vec = 0
             for word in text:
                 vec += model.wv[word]
-            vec = vec / np.linalg.norm(vec)
+            if norm:
+                vec = vec / np.linalg.norm(vec)
             h[key] = vec
             
     with open(relation_text_path, "r")  as f:
@@ -41,7 +42,8 @@ def get_h_r_vec(model:word2vec.Word2Vec, entity_text_path="../dataset/entity_wit
             vec = 0
             for word in text:
                 vec += model.wv[word]
-            vec = vec / np.linalg.norm(vec)
+            if norm:
+                vec = vec / np.linalg.norm(vec)
             r[key] = vec
             
     return h, r
