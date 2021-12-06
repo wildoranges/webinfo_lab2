@@ -62,3 +62,14 @@ def load_and_process_data(train_filename='../dataset/train.txt', test_filename='
     print("test_label's shape:{}".format(test_label.shape))
 
     return train_feature,train_label,test_feature,test_label 
+
+def remove_no_description_token(e_dict, r_dict, input_path:str, output_path:str):
+    ft = open(input_path, 'r')
+    fw = open(output_path, 'w+')
+    for line in ft.readlines():
+        h, r, t = line.strip().split('\t')
+        if (h not in e_dict.keys()) or (r not in r_dict.keys()) or (t not in e_dict.keys()):
+            continue
+        fw.write(line)
+    ft.close()
+    fw.close()
