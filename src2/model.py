@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import random
-from torch.nn.modules.activation import Tanh
+from torch.nn.modules.activation import Sigmoid
 from tqdm import tqdm
 
 from torch.utils.data import Dataset, DataLoader, dataset
@@ -12,50 +12,64 @@ from gensim.models import word2vec
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-class TripletDataset(Dataset):
+class MyDataset(Dataset):
     
-    def __init__(self, x, y):
+    def __init__(self, x, y, h2t):
         self.x = x
         self.y = y
+        self.h2t = h2t
+        self.pos_label = 0
+        self.neg_label = 1
+        # self.pos_label = torch.LongTensor([0])
+        # self.neg_label = torch.LongTensor([1])
 
     def __len__(self):
-        return self.x.shape[0]
+        return 2*self.x.shape[0]
 
     def __getitem__(self, index):
-        return e_dict[self.x[index][0]], r_dict[self.x[index][1]], e_dict[self.y[index][0]]
+        if index % 2 == 0:
+            return e_dict[self.x[index//2][0]], r_dict[self.x[index//2][1]], e_dict[self.y[index//2][0]], self.pos_label
+        else:
+            head = self.x[index//2][0]
+            while True:
+                i = random.randint(0, self.x.shape[0]-1)
+                rand_tail =  self.y[i][0]
+                try:
+                    if rand_tail not in self.h2t[head]:
+                        return e_dict[head], r_dict[self.x[index//2][1]], e_dict[rand_tail], self.neg_label
+                except KeyError:
+                    return e_dict[head], r_dict[self.x[index//2][1]], e_dict[rand_tail], self.neg_label
 
-class Word2Vec(nn.Module):
+class Vec2Tail(nn.Module):
 
-    def __init__(self, vector_size, norm=False):
-        super(Word2Vec, self).__init__()
+    def __init__(self, vector_size, hidden_dim=128):
+        super(Vec2Tail, self).__init__()
         self.vector_size = vector_size
         self.model = nn.Sequential(
-            nn.Linear(2*vector_size, vector_size),
-            nn.Tanh()
+            nn.Linear(3*vector_size, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
         )
-        self.norm = norm
     
-    def forward(self, vec_h, vec_r):
+    def forward(self, vec_h, vec_r, vec_t):
         input_vec = torch.hstack((vec_h, vec_r))
-        if self.norm:
-            return F.normalize(self.model(input_vec))
-        else:
-            return self.model(input_vec)
-        #return F.normalize(self.model(input_vec))
+        input_vec = torch.hstack((input_vec, vec_t))
+        return F.softmax(self.model(input_vec), dim=1)
 
 def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
     model.train()
     for epoch in range(n_epochs):
-        for i, (h, r, t) in enumerate(train_dataloader):
+        for i, (h, r, t, label) in enumerate(train_dataloader):
             optimizer.zero_grad()
             h = h.to(device)
             r = r.to(device)
             t = t.to(device)
+            label = label.to(device)
             #vec_h = e_dict[h].to(device)
             #vec_r = r_dict[r].to(device)
             #vec_t = e_dict[t].to(device)
-            output = model(h, r)
-            loss = criterion(output, t)
+            output = model(h, r, t)
+            loss = criterion(output, label)
             
             loss.backward()
             optimizer.step()
@@ -154,7 +168,18 @@ def get_predict_accuracy(predict_path:str, target_path:str):
     print("accuracy : {}".format(accuracy))
     return accuracy
             
-        
+def get_all_tail_for_head(filepath:str):
+    f = open(filepath, "r")
+    all_tails = {}
+    for line in f.readlines():
+        h, _, t = line.strip().split('\t')
+        try:
+            all_tails[h].add(t)
+        except KeyError:
+            all_tails[h] = set()
+            all_tails[h].add(t)
+    f.close()
+    return all_tails
 
 if __name__ == '__main__':
     #word2vec_model = get_word_vec()
@@ -172,17 +197,19 @@ if __name__ == '__main__':
         load_and_process_data('../dataset/train_process.txt',\
              '../dataset/dev_process.txt')
 
-    train_Dataset = TripletDataset(train_feature, train_label)
-    test_Dataset = TripletDataset(test_feature, test_label)
-    train_DataLoader = DataLoader(train_Dataset, batch_size=64)
-    test_Dataloader = DataLoader(test_Dataset, batch_size=64)
+    all_tails = get_all_tail_for_head('../dataset/train_process.txt')
+    
+    train_Dataset = MyDataset(train_feature, train_label, all_tails)
+    #test_Dataset = MyDataset(test_feature, test_label, all_tails)
+    train_DataLoader = DataLoader(train_Dataset, batch_size=1)
+    #test_Dataloader = DataLoader(test_Dataset, batch_size=64)
 
-    model = Word2Vec(vector_size=100).to(device)
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
+    model = Vec2Tail(vector_size=100).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1, weight_decay=0.01)
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
-    #train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=10, criterion=criterion)
-    test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
+    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
+    #test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
     test_data = process_test("../dataset/dev.txt")
     predict(e_dict, r_dict, test_data, output_path="../output/dev_result.txt")
     get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")
