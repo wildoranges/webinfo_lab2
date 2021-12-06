@@ -54,7 +54,7 @@ class Vec2Tail(nn.Module):
     def forward(self, vec_h, vec_r, vec_t):
         input_vec = torch.hstack((vec_h, vec_r))
         input_vec = torch.hstack((input_vec, vec_t))
-        return F.softmax(self.model(input_vec), dim=1)
+        return self.model(input_vec)
 
 def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
     model.train()
