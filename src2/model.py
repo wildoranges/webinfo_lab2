@@ -105,7 +105,7 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
         i += 1 
     
     
-    for i, (h, r) in tqdm(enumerate(test_dataloader)):
+    for h, r in tqdm(test_dataloader):
         if (h not in total_entity) or (r not in total_relation):
             random_t_index = random.choices(range(len(index)), k=5)
             line = [str(index[i]) for i in random_t_index]
@@ -114,8 +114,8 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
         else:
             h_vec = e_dict[h]
             r_vec = r_dict[r]
-            output_vec = model(torch.Tensor(h_vec).reshape((-1, )).to(device), torch.Tensor(r_vec).reshape((-1, )).to(device))
-            output_vec = output_vec.numpy().reshape((-1, 1))
+            output_vec = model(torch.Tensor(h_vec).reshape((1, -1)).to(device), torch.Tensor(r_vec).reshape((1, -1)).to(device))
+            output_vec = output_vec.detach().cpu().numpy().reshape((-1, 1))
             distance = np.sum((entity_matrix - output_vec)**2, axis=0)
             top_entity_index = list(distance.argsort()[:top])
             line = [str(index[i]) for i in top_entity_index]
@@ -153,5 +153,5 @@ if __name__ == '__main__':
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
     #train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=10, criterion=criterion)
     test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
-    #test_data = process_test("/run/media/cjb/Win/private/learning/new_private/webinfo/lab2/dataset/test.txt")
-    #predict(e_dict, r_dict, test_data)
+    test_data = process_test("../dataset/test.txt")
+    predict(e_dict, r_dict, test_data)
