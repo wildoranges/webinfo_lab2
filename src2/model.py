@@ -108,7 +108,7 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
     
     for h, r in tqdm(test_dataloader):
         if (h not in total_entity) or (r not in total_relation):
-            random_t_index = random.choices(range(len(index)), k=5)
+            random_t_index = random.choices(range(len(index)), k=top)
             line = [str(index[i]) for i in random_t_index]
             line = "\t".join(line)
             f.write(line+"\n")
