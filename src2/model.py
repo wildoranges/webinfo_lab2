@@ -106,7 +106,7 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
         i += 1 
     
     
-    for i, (h, r) in tqdm(enumerate(test_dataloader)):
+    for h, r in tqdm(test_dataloader):
         if (h not in total_entity) or (r not in total_relation):
             random_t_index = random.choices(range(len(index)), k=5)
             line = [str(index[i]) for i in random_t_index]
@@ -115,8 +115,8 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
         else:
             h_vec = e_dict[h]
             r_vec = r_dict[r]
-            output_vec = model(torch.Tensor(h_vec).reshape((-1, )).to(device), torch.Tensor(r_vec).reshape((-1, )).to(device))
-            output_vec = output_vec.numpy().reshape((-1, 1))
+            output_vec = model(torch.Tensor(h_vec).reshape((1, -1)).to(device), torch.Tensor(r_vec).reshape((1, -1)).to(device))
+            output_vec = output_vec.detach().cpu().numpy().reshape((-1, 1))
             distance = np.sum((entity_matrix - output_vec)**2, axis=0)
             top_entity_index = list(distance.argsort()[:top])
             line = [str(index[i]) for i in top_entity_index]
@@ -131,29 +131,9 @@ if __name__ == '__main__':
     #word2vec_model = get_word_vec()
     word2vec_model = word2vec.Word2Vec.load("../output/test")
     e_dict, r_dict = get_h_r_vec(word2vec_model)
-    
-    # ignore entities and relations without description in train set
-    # ft = open('../dataset/train.txt', 'r')
-    # fw = open('../dataset/train_process.txt', 'w+')
-    # for line in ft.readlines():
-    #     h, r, t = line.strip().split('\t')
-    #     if (h not in e_dict.keys()) or (r not in r_dict.keys()) or (t not in e_dict.keys()):
-    #         continue
-    #     fw.write(line)
-    # ft.close()
-    # fw.close()
 
     # ignore entities and relations without description in test set
     remove_no_description_token(e_dict, r_dict, '../dataset/dev.txt', '../dataset/dev_process.txt')
-    # ft = open('../dataset/dev.txt', 'r')
-    # fw = open('../dataset/dev_process.txt', 'w+')
-    # for line in ft.readlines():
-    #     h, r, t = line.strip().split('\t')
-    #     if (h not in e_dict.keys()) or (r not in r_dict.keys()) or (t not in e_dict.keys()):
-    #         continue
-    #     fw.write(line)
-    # ft.close()
-    # fw.close()
     
     train_feature, train_label, test_feature, test_label = \
         load_and_process_data('../dataset/train_process.txt',\
@@ -170,5 +150,5 @@ if __name__ == '__main__':
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
     train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
     test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
-    test_data = process_test("/run/media/cjb/Win/private/learning/new_private/webinfo/lab2/dataset/test.txt")
+    test_data = process_test("../dataset/test.txt")
     predict(e_dict, r_dict, test_data)
