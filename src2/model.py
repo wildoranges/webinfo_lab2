@@ -146,12 +146,10 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
     f = open(output_path, "w+")
     model = torch.load(model_path)
     model.eval()
-    index = []
     total_entity = set(e_dict.keys())
     total_relation = set(r_dict.keys())
     
-    for k, _ in e_dict.items():
-        index.append(k)
+    index = list(e_dict.keys())
     
     for h, r in tqdm(test_dataloader):
         if (h not in total_entity) or (r not in total_relation):
