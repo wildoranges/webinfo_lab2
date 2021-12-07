@@ -20,25 +20,62 @@ class MyDataset(Dataset):
         self.h2t = h2t
         self.pos_label = 0
         self.neg_label = 1
+        self.negx = np.array(self.x)
+        self.negy = np.array(self.y)
+        for i in range(self.x.shape[0]):
+            head = self.x[i][0]
+            while True:
+                j = random.randint(0, self.x.shape[0]-1)
+                rand_tail = self.y[j][0]
+                try:
+                    if rand_tail not in self.h2t[head]:
+                        self.negy[i][0] = rand_tail
+                        break
+                except KeyError:
+                    self.negy[i][0] = rand_tail
+                    break
         # self.pos_label = torch.LongTensor([0])
         # self.neg_label = torch.LongTensor([1])
 
     def __len__(self):
         return 2*self.x.shape[0]
-
+    
+    
     def __getitem__(self, index):
         if index % 2 == 0:
             return e_dict[self.x[index//2][0]], r_dict[self.x[index//2][1]], e_dict[self.y[index//2][0]], self.pos_label
         else:
-            head = self.x[index//2][0]
-            while True:
-                i = random.randint(0, self.x.shape[0]-1)
-                rand_tail =  self.y[i][0]
-                try:
-                    if rand_tail not in self.h2t[head]:
-                        return e_dict[head], r_dict[self.x[index//2][1]], e_dict[rand_tail], self.neg_label
-                except KeyError:
-                    return e_dict[head], r_dict[self.x[index//2][1]], e_dict[rand_tail], self.neg_label
+            return e_dict[self.negx[index//2][0]], r_dict[self.negx[index//2][1]], e_dict[self.negy[index//2][0]], self.neg_label
+
+    # def __getitem__(self, index):
+    #     if index % 2 == 0:
+    #         return e_dict[self.x[index//2][0]], r_dict[self.x[index//2][1]], e_dict[self.y[index//2][0]], self.pos_label
+    #     else:
+    #         head = self.x[index//2][0]
+    #         while True:
+    #             i = random.randint(0, self.x.shape[0]-1)
+    #             rand_tail =  self.y[i][0]
+    #             try:
+    #                 if rand_tail not in self.h2t[head]:
+    #                     return e_dict[head], r_dict[self.x[index//2][1]], e_dict[rand_tail], self.neg_label
+    #             except KeyError:
+    #                 return e_dict[head], r_dict[self.x[index//2][1]], e_dict[rand_tail], self.neg_label
+                
+class PosDataset(Dataset):
+    
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.pos_label = 0
+        # self.pos_label = torch.LongTensor([0])
+        # self.neg_label = torch.LongTensor([1])
+
+    def __len__(self):
+        return self.x.shape[0]
+
+    def __getitem__(self, index):
+        return e_dict[self.x[index][0]], r_dict[self.x[index][1]], e_dict[self.y[index][0]], self.pos_label
+        
 
 class Vec2Tail(nn.Module):
 
@@ -109,21 +146,12 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
     f = open(output_path, "w+")
     model = torch.load(model_path)
     model.eval()
-    index = {}
+    index = []
     total_entity = set(e_dict.keys())
     total_relation = set(r_dict.keys())
     
-    i = 0
-    entity_matrix = None
-    for k, v in e_dict.items():
-        v = v.reshape((-1, 1))
-        if i == 0:
-            entity_matrix = v
-        else:
-            entity_matrix = np.hstack((entity_matrix, v))
-        index[i] = k
-        i += 1 
-    
+    for k, _ in e_dict.items():
+        index.append(k)
     
     for h, r in tqdm(test_dataloader):
         if (h not in total_entity) or (r not in total_relation):
@@ -134,10 +162,16 @@ def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/resul
         else:
             h_vec = e_dict[h]
             r_vec = r_dict[r]
-            output_vec = model(torch.Tensor(h_vec).reshape((1, -1)).to(device), torch.Tensor(r_vec).reshape((1, -1)).to(device))
-            output_vec = output_vec.detach().cpu().numpy().reshape((-1, 1))
-            distance = np.sum((entity_matrix - output_vec)**2, axis=0)
-            top_entity_index = list(distance.argsort()[:top])
+            result = []
+            for tail in index:
+                t_vec = e_dict[tail]
+                output_vec = model(torch.Tensor(h_vec).reshape((1, -1)).to(device), torch.Tensor(r_vec).reshape((1, -1)).to(device), 
+                                   torch.Tensor(t_vec).reshape((1, -1)).to(device))
+                output_vec = output_vec.detach().cpu().reshape((-1, 1))
+                output_vec = F.softmax(output_vec, dim=0).numpy()
+                result.append(float(output_vec[1][0]))
+            all_prob = np.array(result)
+            top_entity_index = list(all_prob.argsort()[:top])
             line = [str(index[i]) for i in top_entity_index]
             line = "\t".join(line)
             f.write(line+"\n")
@@ -184,7 +218,7 @@ def get_all_tail_for_head(filepath:str):
 if __name__ == '__main__':
     #word2vec_model = get_word_vec()
     word2vec_model = word2vec.Word2Vec.load("../output/word2vec.model")
-    e_dict, r_dict = get_h_r_vec(word2vec_model)
+    e_dict, r_dict = get_h_r_vec(word2vec_model, norm=True)
 
     # ignore entities and relations without description in train set
     # remove_no_description_token(e_dict, r_dict, '../dataset/train.txt', '../dataset/train_process.txt')
@@ -200,15 +234,16 @@ if __name__ == '__main__':
     all_tails = get_all_tail_for_head('../dataset/train_process.txt')
     
     train_Dataset = MyDataset(train_feature, train_label, all_tails)
+    #train_Dataset = PosDataset(train_feature, train_label)
     #test_Dataset = MyDataset(test_feature, test_label, all_tails)
-    train_DataLoader = DataLoader(train_Dataset, batch_size=1)
+    train_DataLoader = DataLoader(train_Dataset, batch_size=64)
     #test_Dataloader = DataLoader(test_Dataset, batch_size=64)
 
     model = Vec2Tail(vector_size=100).to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.1, weight_decay=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
-    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
+    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=10, criterion=criterion)
     #test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
     test_data = process_test("../dataset/dev.txt")
     predict(e_dict, r_dict, test_data, output_path="../output/dev_result.txt")
