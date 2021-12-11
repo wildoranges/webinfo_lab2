@@ -18,24 +18,57 @@ class MyDataset(Dataset):
         self.x = x
         self.y = y
         self.h2t = h2t
+        self.t2h = {}
+        for _, rt in h2t.items():
+            for _, ts in rt.items():
+                for t in ts:
+                    self.t2h[t] = {}
+                
+        for h, rt in h2t.items():
+            for r, ts in rt.items():
+                for t in ts:
+                    try:
+                        self.t2h[t][r].add(h)
+                    except KeyError:
+                        self.t2h[t][r] = set()
+                        self.t2h[t][r].add(h)
         self.pos_label = 0
         self.neg_label = 1
         self.negx = np.array(self.x)
         self.negy = np.array(self.y)
+        self.gen_neg_samples()
+        
+    def gen_neg_samples(self):
         for i in range(self.x.shape[0]):
             head = self.x[i][0]
-            while True:
-                j = random.randint(0, self.x.shape[0]-1)
-                rand_tail = self.y[j][0]
-                try:
-                    if rand_tail not in self.h2t[head]:
+            rel = self.x[i][1]
+            tail = self.y[i][0]
+            head_or_tail = random.randint(0, 1)
+            if head_or_tail > 0: 
+                #random tail
+                while True:
+                    j = random.randint(0, self.x.shape[0]-1)
+                    rand_tail = self.y[j][0]
+                    try:
+                        if rand_tail not in self.h2t[head][rel]:
+                            self.negy[i][0] = rand_tail
+                            break
+                    except KeyError:
                         self.negy[i][0] = rand_tail
                         break
-                except KeyError:
-                    self.negy[i][0] = rand_tail
-                    break
-        # self.pos_label = torch.LongTensor([0])
-        # self.neg_label = torch.LongTensor([1])
+            else:
+                #rand head
+                while True:
+                    j = random.randint(0, self.x.shape[0]-1)
+                    rand_head = self.x[j][0]
+                    try:
+                        if rand_head not in self.t2h[tail][rel]:
+                            self.negx[i][0] = rand_head
+                            break
+                    except KeyError:
+                        self.negx[i][0] = rand_head
+                        break
+                    
 
     def __len__(self):
         return 2*self.x.shape[0]
@@ -203,13 +236,18 @@ def get_predict_accuracy(predict_path:str, target_path:str):
 def get_all_tail_for_head(filepath:str):
     f = open(filepath, "r")
     all_tails = {}
-    for line in f.readlines():
-        h, _, t = line.strip().split('\t')
+    lines = f.readlines()
+    for line in lines:
+        h, _, _ = line.strip().split('\t')
+        all_tails[h] = {}
+    for line in lines:
+        h, r, t = line.strip().split('\t')
         try:
-            all_tails[h].add(t)
+            all_tails[h][r].add(t)
         except KeyError:
-            all_tails[h] = set()
-            all_tails[h].add(t)
+            all_tails[h][r] = set()
+            all_tails[h][r].add(t)
+        
     f.close()
     return all_tails
 
