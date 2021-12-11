@@ -75,3 +75,12 @@ def remove_no_description_token(e_dict, r_dict, input_path:str, output_path:str)
         fw.write(line)
     ft.close()
     fw.close()
+
+def get_ent_rel2id(e_dict, r_dict):
+    ent2id = {}
+    rel2id = {}
+    for index, key in enumerate(e_dict):
+        ent2id[key] = index
+    for index, key in enumerate(r_dict):
+        rel2id[key] = index
+    return ent2id, rel2id
