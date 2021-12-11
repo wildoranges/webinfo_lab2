@@ -7,10 +7,10 @@ from torch.nn.modules.activation import Sigmoid
 from tqdm import tqdm
 
 from torch.utils.data import Dataset, DataLoader, dataset
-from data_process import get_word_vec, get_h_r_vec, load_and_process_data, remove_no_description_token
+from data_process import get_ent_rel2id, get_word_vec, get_h_r_vec, load_and_process_data, remove_no_description_token
 from gensim.models import word2vec
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:7' if torch.cuda.is_available() else 'cpu')
 
 class MyDataset(Dataset):
     
@@ -81,17 +81,35 @@ class Vec2Tail(nn.Module):
 
     def __init__(self, vector_size, hidden_dim=128):
         super(Vec2Tail, self).__init__()
+
         self.vector_size = vector_size
+        self.entity_num = len(e_dict)
+        self.relation_num = len(r_dict)
+
+        self.ent_embedding = nn.Embedding(self.entity_num, vector_size)
+        self.rel_embedding = nn.Embedding(self.relation_num, vector_size)
+        
         self.model = nn.Sequential(
             nn.Linear(3*vector_size, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 2),
         )
-    
+        
+        self.__init_embedding()
+
     def forward(self, vec_h, vec_r, vec_t):
         input_vec = torch.hstack((vec_h, vec_r))
         input_vec = torch.hstack((input_vec, vec_t))
         return self.model(input_vec)
+
+    def __init_embedding(self):
+        for key in e_dict.keys():
+            self.ent_embedding.weight.data[ent2id[key]] = torch.from_numpy(e_dict[key])
+        
+        for key in r_dict.keys():
+            self.rel_embedding.weight.data[rel2id[key]] = torch.from_numpy(r_dict[key])
+
+
 
 def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
     model.train()
@@ -217,6 +235,7 @@ if __name__ == '__main__':
     #word2vec_model = get_word_vec()
     word2vec_model = word2vec.Word2Vec.load("../output/word2vec.model")
     e_dict, r_dict = get_h_r_vec(word2vec_model, norm=True)
+    ent2id, rel2id = get_ent_rel2id(e_dict, r_dict)
 
     # ignore entities and relations without description in train set
     # remove_no_description_token(e_dict, r_dict, '../dataset/train.txt', '../dataset/train_process.txt')
@@ -224,25 +243,24 @@ if __name__ == '__main__':
     # ignore entities and relations without description in test set
     # remove_no_description_token(e_dict, r_dict, '../dataset/dev.txt', '../dataset/dev_process.txt')
 
-    
     train_feature, train_label, test_feature, test_label = \
         load_and_process_data('../dataset/train_process.txt',\
              '../dataset/dev_process.txt')
 
     all_tails = get_all_tail_for_head('../dataset/train_process.txt')
     
-    train_Dataset = MyDataset(train_feature, train_label, all_tails)
-    #train_Dataset = PosDataset(train_feature, train_label)
-    #test_Dataset = MyDataset(test_feature, test_label, all_tails)
-    train_DataLoader = DataLoader(train_Dataset, batch_size=64)
-    #test_Dataloader = DataLoader(test_Dataset, batch_size=64)
+    # train_Dataset = MyDataset(train_feature, train_label, all_tails)
+    # train_Dataset = PosDataset(train_feature, train_label)
+    # test_Dataset = MyDataset(test_feature, test_label, all_tails)
+    # train_DataLoader = DataLoader(train_Dataset, batch_size=64)
+    # test_Dataloader = DataLoader(test_Dataset, batch_size=64)
 
     model = Vec2Tail(vector_size=100).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
     train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=10, criterion=criterion)
-    #test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
+    # test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
     test_data = process_test("../dataset/dev.txt")
     predict(e_dict, r_dict, test_data, output_path="../output/dev_result.txt")
-    get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")
+    # get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")
