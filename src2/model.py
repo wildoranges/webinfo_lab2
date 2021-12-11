@@ -139,7 +139,7 @@ class Vec2Tail(nn.Module):
         
         index = list(ent2id.keys())
         
-        total_entity_id = torch.LongTensor([ent2id[ent] for ent in index]).reshape((-1, 1)).to(device)
+        total_entity_id = torch.LongTensor([ent2id[ent] for ent in index]).to(device)
         
         for h, r in tqdm(test_dataloader):
             if (h not in total_entity_set) or (r not in total_relation_set):
@@ -148,13 +148,13 @@ class Vec2Tail(nn.Module):
                 line = "\t".join(line)
                 f.write(line+"\n")
             else:
-                h_id = torch.LongTensor(ent2id[h]).to(device)
-                r_id = torch.LongTensor(rel2id[r]).to(device)
+                h_id = torch.LongTensor([ent2id[h]]).to(device)
+                r_id = torch.LongTensor([rel2id[r]]).to(device)
                 target = self.ent_embedding(h_id) + self.rel_embedding(r_id)
                 target = target.reshape((1, -1))
                 t_matrix = self.ent_embedding(total_entity_id)
                 distances = torch.sum((t_matrix - target)**2, dim=1).argsort()[:top]
-                line = [str(index(int(i))) for i in distances]
+                line = [str(index[int(i)]) for i in distances]
                 line = "\t".join(line)
                 f.write(line+"\n")
         f.close()
@@ -278,7 +278,7 @@ if __name__ == '__main__':
     criterion = nn.MarginRankingLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
-    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
+    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=1, criterion=criterion)
     # test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
     test_data = process_test("../dataset/dev.txt")
     model.predict(test_data, output_path="../output/dev_result.txt")
