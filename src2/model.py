@@ -130,6 +130,34 @@ class Vec2Tail(nn.Module):
         norm = self.rel_embedding.weight.detach().cpu().numpy()
         norm = norm / np.sqrt(np.sum(np.square(norm), axis=1, keepdims=True))
         self.rel_embedding.weight.data.copy_(torch.from_numpy(norm))
+        
+    def predict(self, test_dataloader, top=5, output_path="../output/result.txt"):
+        self.eval()
+        f = open(output_path, "w+")
+        total_entity_set = set(ent2id.keys())
+        total_relation_set = set(rel2id.keys())
+        
+        index = list(ent2id.keys())
+        
+        total_entity_id = torch.LongTensor([ent2id[ent] for ent in index]).reshape((-1, 1)).to(device)
+        
+        for h, r in tqdm(test_dataloader):
+            if (h not in total_entity_set) or (r not in total_relation_set):
+                random_t_index = random.choices(range(len(index)), k=top)
+                line = [str(index[i]) for i in random_t_index]
+                line = "\t".join(line)
+                f.write(line+"\n")
+            else:
+                h_id = torch.LongTensor(ent2id[h]).to(device)
+                r_id = torch.LongTensor(rel2id[r]).to(device)
+                target = self.ent_embedding(h_id) + self.rel_embedding(r_id)
+                target = target.reshape((1, -1))
+                t_matrix = self.ent_embedding(total_entity_id)
+                distances = torch.sum((t_matrix - target)**2, dim=1).argsort()[:top]
+                line = [str(index(int(i))) for i in distances]
+                line = "\t".join(line)
+                f.write(line+"\n")
+        f.close()
 
 def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
     model.train()
@@ -179,40 +207,6 @@ def process_test(test_data_path:str):
         test_data.append(line.strip().split("\t")[:2])
     f.close()
     return test_data
-    
-def predict(e_dict, r_dict, test_dataloader, top=5, output_path="../output/result.txt", model_path="../output/model.pkl"):
-    f = open(output_path, "w+")
-    model = torch.load(model_path)
-    model.eval()
-    total_entity = set(e_dict.keys())
-    total_relation = set(r_dict.keys())
-    
-    index = list(e_dict.keys())
-    
-    for h, r in tqdm(test_dataloader):
-        if (h not in total_entity) or (r not in total_relation):
-            random_t_index = random.choices(range(len(index)), k=top)
-            line = [str(index[i]) for i in random_t_index]
-            line = "\t".join(line)
-            f.write(line+"\n")
-        else:
-            h_vec = e_dict[h]
-            r_vec = r_dict[r]
-            result = []
-            for tail in index:
-                t_vec = e_dict[tail]
-                output_vec = model(torch.Tensor(h_vec).reshape((1, -1)).to(device), torch.Tensor(r_vec).reshape((1, -1)).to(device), 
-                                   torch.Tensor(t_vec).reshape((1, -1)).to(device))
-                output_vec = output_vec.detach().cpu().reshape((-1, 1))
-                output_vec = F.softmax(output_vec, dim=0).numpy()
-                result.append(float(output_vec[1][0]))
-            all_prob = np.array(result)
-            top_entity_index = list(all_prob.argsort()[:top])
-            line = [str(index[i]) for i in top_entity_index]
-            line = "\t".join(line)
-            f.write(line+"\n")
-            
-    f.close()
     
     
 def get_predict_accuracy(predict_path:str, target_path:str):
@@ -286,6 +280,6 @@ if __name__ == '__main__':
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
     train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
     # test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
-    # test_data = process_test("../dataset/dev.txt")
-    # predict(e_dict, r_dict, test_data, output_path="../output/dev_result.txt")
+    test_data = process_test("../dataset/dev.txt")
+    model.predict(test_data, output_path="../output/dev_result.txt")
     # get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")
