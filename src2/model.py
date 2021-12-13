@@ -130,7 +130,7 @@ class Vec2Tail(nn.Module):
         norm = norm / np.sqrt(np.sum(np.square(norm), axis=1, keepdims=True))
         self.rel_embedding.weight.data.copy_(torch.from_numpy(norm))
         
-    def predict(self, test_dataloader, top=5, output_path="../output/result.txt"):
+    def predict(self, test_dataloader, top=5, seperator='\t', output_path="../output/result.txt"):
         self.eval()
         f = open(output_path, "w+")
         total_entity_set = set(ent2id.keys())
@@ -144,7 +144,7 @@ class Vec2Tail(nn.Module):
             if (h not in total_entity_set) or (r not in total_relation_set):
                 random_t_index = random.choices(range(len(index)), k=top)
                 line = [str(index[i]) for i in random_t_index]
-                line = "\t".join(line)
+                line = seperator.join(line)
                 f.write(line+"\n")
             else:
                 h_id = torch.LongTensor([ent2id[h]]).to(device)
@@ -154,7 +154,7 @@ class Vec2Tail(nn.Module):
                 t_matrix = self.ent_embedding(total_entity_id)
                 distances = torch.sum((t_matrix - target)**2, dim=1).argsort()[:top]
                 line = [str(index[int(i)]) for i in distances]
-                line = "\t".join(line)
+                line = seperator.join(line)
                 f.write(line+"\n")
         f.close()
 
@@ -192,23 +192,6 @@ def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
 
     torch.save(model, "../output/model.pkl")
     
-
-def test(test_dataloader, device, criterion):
-    model = torch.load("../output/model.pkl")
-    model.eval()
-    total_loss = 0
-
-    for i, (h, r, t) in enumerate(test_dataloader):
-        h = h.to(device)
-        r = r.to(device)
-        t = t.to(device)
-        loss = criterion(model(h, r), t)
-        total_loss += loss
-        if i % 10 == 0:
-            print('Test Batch: [{}/{}]\t Loss: {}'.format(
-                i * len(h), len(test_dataloader.dataset), loss.item()))
-
-    print('Loss : {}\nAverage loss: {}'.format(total_loss, total_loss / len(test_dataloader.dataset)))
     
 def process_test(test_data_path:str):
     f = open(test_data_path, "r")
@@ -280,19 +263,16 @@ if __name__ == '__main__':
     all_tails = get_all_tail_for_head('../dataset/train_process.txt')
     
     train_Dataset = MyDataset(train_feature, train_label, all_tails)
-    # train_Dataset = PosDataset(train_feature, train_label)
-    # test_Dataset = MyDataset(test_feature, test_label, all_tails)
     train_DataLoader = DataLoader(train_Dataset, batch_size=1000, shuffle=True)
-    
-    # test_Dataloader = DataLoader(test_Dataset, batch_size=64)
 
     model = Vec2Tail(vector_size=100).to(device)
+    #model = torch.load("../output/model.pkl")
 
     criterion = nn.MarginRankingLoss(margin=4.0, reduction='mean')
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
-    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
-    # test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
-    # test_data = process_test("../dataset/dev.txt")
-    # model.predict(test_data, output_path="../output/dev_result.txt")
-    # get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")
+    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=50, criterion=criterion)
+    test_data = process_test("../dataset/dev.txt")
+    model.predict(test_data, output_path="../output/dev_result.txt")
+    get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")
+    pre_data = process_test("../dataset/test.txt")
+    model.predict(pre_data, seperator=',', output_path="../output/test_result.txt")
