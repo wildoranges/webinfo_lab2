@@ -5,12 +5,12 @@ import torch.nn.functional as F
 import random
 from torch.nn.modules.activation import Sigmoid
 from tqdm import tqdm
-
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader, dataset
 from data_process import get_ent_rel2id, get_word_vec, get_h_r_vec, load_and_process_data, remove_no_description_token
 from gensim.models import word2vec
 
-device = torch.device('cuda:7' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class MyDataset(Dataset):
     
@@ -106,7 +106,6 @@ class Vec2Tail(nn.Module):
         self.ent_embedding = nn.Embedding(self.entity_num, vector_size)
         self.rel_embedding = nn.Embedding(self.relation_num, vector_size)
 
-
         self.__init_embedding()
 
     def forward(self, h, r, t):
@@ -161,7 +160,8 @@ class Vec2Tail(nn.Module):
 
 def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
     model.train()
-    n_batches = len(train_dataloader.dataset) //  train_dataloader.batch_size
+    n_batches = len(train_dataloader.dataset) //  train_dataloader.batch_size + 1
+    loss_list = []
     for epoch in range(n_epochs):
         total_loss = 0.0
         for i, (h, r, t, h_neg, r_neg, t_neg) in enumerate(train_dataloader):
@@ -179,10 +179,19 @@ def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
             optimizer.step()
         
         mean_train_loss = total_loss / n_batches
-        print("epoch {}, loss = {}".format(epoch), mean_train_loss)
-
+        loss_list.append(mean_train_loss.detach().cpu().numpy())
+        print("epoch {}, loss = {}".format(epoch, mean_train_loss))
+    
+    figure = plt.figure()
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.plot(loss_list)
+    plt.title('Training Loss')
+    # plt.show()
+    figure.savefig('loss.png')
 
     torch.save(model, "../output/model.pkl")
+    
 
 def test(test_dataloader, device, criterion):
     model = torch.load("../output/model.pkl")
@@ -273,16 +282,17 @@ if __name__ == '__main__':
     train_Dataset = MyDataset(train_feature, train_label, all_tails)
     # train_Dataset = PosDataset(train_feature, train_label)
     # test_Dataset = MyDataset(test_feature, test_label, all_tails)
-    train_DataLoader = DataLoader(train_Dataset, batch_size=1000, shuffle=True, pin_memory=True)
+    train_DataLoader = DataLoader(train_Dataset, batch_size=1000, shuffle=True)
     
     # test_Dataloader = DataLoader(test_Dataset, batch_size=64)
 
     model = Vec2Tail(vector_size=100).to(device)
-    criterion = nn.MarginRankingLoss(margin=1, reduction='mean')
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
+
+    criterion = nn.MarginRankingLoss(margin=4.0, reduction='mean')
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
-    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=1, criterion=criterion)
+    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=100, criterion=criterion)
     # test(test_dataloader=test_Dataloader, device=device, criterion=criterion)
-    test_data = process_test("../dataset/dev.txt")
-    model.predict(test_data, output_path="../output/dev_result.txt")
+    # test_data = process_test("../dataset/dev.txt")
+    # model.predict(test_data, output_path="../output/dev_result.txt")
     # get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")
