@@ -78,20 +78,6 @@ class MyDataset(Dataset):
 
         return ent2id[self.x[index][0]], rel2id[self.x[index][1]], ent2id[self.y[index][0]], \
             ent2id[self.negx[index][0]], rel2id[self.negx[index][1]], ent2id[self.negy[index][0]]
-
-
-class PosDataset(Dataset):
-    
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.pos_label = 0
-
-    def __len__(self):
-        return self.x.shape[0]
-
-    def __getitem__(self, index):
-        return ent2id[self.x[index][0]], rel2id[self.x[index][1]], ent2id[self.y[index][0]]
         
 
 class Vec2Tail(nn.Module):
@@ -104,31 +90,41 @@ class Vec2Tail(nn.Module):
         self.relation_num = len(r_dict)
 
         self.ent_embedding = nn.Embedding(self.entity_num, vector_size)
-        self.rel_embedding = nn.Embedding(self.relation_num, vector_size)
+        self.rel_hyperplane_embedding = nn.Embedding(self.relation_num, vector_size)
+        self.rel_norm_embedding = nn.Embedding(self.relation_num, vector_size)
 
         self.__init_embedding()
 
     def forward(self, h, r, t):
         # model() -> d(h+r, t)
         vec_h = self.ent_embedding(h)
-        vec_r = self.rel_embedding(r)
+        d_r = self.rel_hyperplane_embedding(r)
+        norm_vec = self.rel_norm_embedding(r)
         vec_t = self.ent_embedding(t)
-        return torch.sqrt(torch.sum((vec_h + vec_r - vec_t) ** 2, dim=1))
+        vec_h = self.project(vec_h, norm_vec)
+        vec_t = self.project(vec_t, norm_vec)
+        return torch.sqrt(torch.sum((vec_h + d_r - vec_t) ** 2, dim=1))
         
     def __init_embedding(self):
         for key in e_dict.keys():
             self.ent_embedding.weight.data[ent2id[key]] = torch.from_numpy(e_dict[key])
         
         for key in r_dict.keys():
-            self.rel_embedding.weight.data[rel2id[key]] = torch.from_numpy(r_dict[key])
+            self.rel_hyperplane_embedding.weight.data[rel2id[key]] = torch.from_numpy(r_dict[key])
 
         norm = self.ent_embedding.weight.detach().cpu().numpy()
         norm = norm / np.sqrt(np.sum(np.square(norm), axis=1, keepdims=True))
         self.ent_embedding.weight.data.copy_(torch.from_numpy(norm))
 
-        norm = self.rel_embedding.weight.detach().cpu().numpy()
+        norm = self.rel_hyperplane_embedding.weight.detach().cpu().numpy()
         norm = norm / np.sqrt(np.sum(np.square(norm), axis=1, keepdims=True))
-        self.rel_embedding.weight.data.copy_(torch.from_numpy(norm))
+        self.rel_hyperplane_embedding.weight.data.copy_(torch.from_numpy(norm))
+        nn.init.xavier_uniform_(self.rel_norm_embedding.weight.data)
+        
+    def project(self, vec, norm_vec):
+        norm_vec = F.normalize(norm_vec, p=2, dim=-1)
+        
+        return vec - (torch.sum(vec*norm_vec, dim=-1).reshape(-1, 1) * norm_vec)
         
     def predict(self, test_dataloader, top=5, seperator='\t', output_path="../output/result.txt"):
         self.eval()
@@ -149,9 +145,13 @@ class Vec2Tail(nn.Module):
             else:
                 h_id = torch.LongTensor([ent2id[h]]).to(device)
                 r_id = torch.LongTensor([rel2id[r]]).to(device)
-                target = self.ent_embedding(h_id) + self.rel_embedding(r_id)
+                norm_vec = self.rel_norm_embedding(r_id)
+                vec_h = self.ent_embedding(h_id)
+                d_r = self.rel_hyperplane_embedding(r_id)
+                target = self.project(vec_h, norm_vec) + d_r
                 target = target.reshape((1, -1))
                 t_matrix = self.ent_embedding(total_entity_id)
+                t_matrix = self.project(t_matrix, norm_vec)
                 distances = torch.sum((t_matrix - target)**2, dim=1).argsort()[:top]
                 line = [str(index[int(i)]) for i in distances]
                 line = seperator.join(line)
@@ -270,7 +270,7 @@ if __name__ == '__main__':
 
     criterion = nn.MarginRankingLoss(margin=4.0, reduction='mean')
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=50, criterion=criterion)
+    train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=25, criterion=criterion)
     test_data = process_test("../dataset/dev.txt")
     model.predict(test_data, output_path="../output/dev_result.txt")
     get_predict_accuracy("../output/dev_result.txt", "../dataset/dev.txt")
