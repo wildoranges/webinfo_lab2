@@ -161,12 +161,12 @@ class Vec2Tail(nn.Module):
 
 def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
     model.train()
+    n_batches = len(train_dataloader.dataset) //  train_dataloader.batch_size
     for epoch in range(n_epochs):
+        total_loss = 0.0
         for i, (h, r, t, h_neg, r_neg, t_neg) in enumerate(train_dataloader):
             optimizer.zero_grad()
-            h = h.to(device)
-            r = r.to(device)
-            t = t.to(device)
+            h, r, t = h.to(device), r.to(device), t.to(device)
             h_neg, r_neg, t_neg = h_neg.to(device), r_neg.to(device), t_neg.to(device)
             out_pos = model(h, r, t)
             out_neg = model(h_neg, r_neg, t_neg)
@@ -174,11 +174,13 @@ def train(model, train_dataloader, device, optimizer, n_epochs, criterion):
             y = -torch.ones(h.shape[0]).to(device)
 
             loss = criterion(out_pos, out_neg, y)
+            total_loss += loss
             loss.backward()
             optimizer.step()
-            if i % 1000 == 0:
-                print('Train Epoch: {}/{} [{}/{}]\tLoss: {:.6f}'.format(
-                    epoch, n_epochs, i * len(h), len(train_dataloader.dataset), loss.item()))
+        
+        mean_train_loss = total_loss / n_batches
+        print("epoch {}, loss = {}".format(epoch), mean_train_loss)
+
 
     torch.save(model, "../output/model.pkl")
 
@@ -271,11 +273,12 @@ if __name__ == '__main__':
     train_Dataset = MyDataset(train_feature, train_label, all_tails)
     # train_Dataset = PosDataset(train_feature, train_label)
     # test_Dataset = MyDataset(test_feature, test_label, all_tails)
-    train_DataLoader = DataLoader(train_Dataset, batch_size=64, shuffle=True, pin_memory=True)
+    train_DataLoader = DataLoader(train_Dataset, batch_size=1000, shuffle=True, pin_memory=True)
+    
     # test_Dataloader = DataLoader(test_Dataset, batch_size=64)
 
     model = Vec2Tail(vector_size=100).to(device)
-    criterion = nn.MarginRankingLoss()
+    criterion = nn.MarginRankingLoss(margin=1, reduction='mean')
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
     optimizer2 = torch.optim.SGD(model.parameters(), lr=0.01)
     train(model=model, train_dataloader=train_DataLoader, device=device, optimizer=optimizer, n_epochs=1, criterion=criterion)
